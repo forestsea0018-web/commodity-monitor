@@ -7,23 +7,28 @@
 
 import os
 import sys
+import json
 import time
+import hashlib
 import socket
 import requests
 import feedparser
 import concurrent.futures
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 socket.setdefaulttimeout(10)
 
 # ── 环境变量 ──────────────────────────────────────────────
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "").strip()
-# 时间窗口：推送最近 N 分钟内发布的文章（略大于 cron 间隔，防漏）
-WINDOW_MIN = int(os.environ.get("WINDOW_MIN", "15"))
-# 单次运行最大推送条数（防刷屏 & 控制 PushPlus 日额度）
-MAX_PUSH_PER_RUN = int(os.environ.get("MAX_PUSH_PER_RUN", "20"))
+# 最大推送条数（防刷屏 & 控制 PushPlus 日额度）
+MAX_PUSH_PER_RUN = int(os.environ.get("MAX_PUSH_PER_RUN", "30"))
 # 是否合并成一条汇总消息（推荐 True，节省 PushPlus 额度）
 DIGEST_MODE = os.environ.get("DIGEST_MODE", "1") == "1"
+# 兜底时间窗（小时）：即使是没见过的文章，超过这个时间也不推（避免首次跑刷屏）
+MAX_AGE_HOURS = int(os.environ.get("MAX_AGE_HOURS", "24"))
+
+SEEN_FILE = Path("seen_articles.json")
 
 # ── 关键词（与本地版保持一致） ────────────────────────────
 COMMODITIES = {
@@ -175,6 +180,10 @@ def parse_pub_time(entry):
                 pass
     return None
 
+def article_id(entry_link, entry_title):
+    raw = (entry_link or entry_title or "").strip()
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
 def fetch_feed(nu):
     name, url = nu
     try:
@@ -183,10 +192,13 @@ def fetch_feed(nu):
         )
         out = []
         for e in feed.entries[:50]:
+            link = getattr(e, "link", "")
+            title = getattr(e, "title", "")
             out.append({
-                "title":   getattr(e, "title", ""),
+                "id":      article_id(link, title),
+                "title":   title,
                 "summary": getattr(e, "summary", "")[:400],
-                "link":    getattr(e, "link", ""),
+                "link":    link,
                 "source":  name,
                 "pub":     parse_pub_time(e),
             })
@@ -227,28 +239,48 @@ def push_wechat(title, content_html):
         return False
 
 # ── 主逻辑 ────────────────────────────────────────────────
+def load_seen():
+    if SEEN_FILE.exists():
+        try:
+            return set(json.loads(SEEN_FILE.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return set()
+
+def save_seen(seen):
+    items = list(seen)[-5000:]
+    SEEN_FILE.write_text(json.dumps(items), encoding="utf-8")
+
 def main():
     if not PUSHPLUS_TOKEN:
         print("错误：请设置 PUSHPLUS_TOKEN 环境变量（GitHub Secrets）")
         sys.exit(1)
 
-    print(f"[{datetime.now()}] 开始抓取...")
+    seen = load_seen()
+    first_run = len(seen) == 0
+    print(f"[{datetime.now()}] 开始抓取... (已读库: {len(seen)} 篇)")
+
     articles = fetch_all()
     print(f"共抓取 {len(articles)} 篇")
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=WINDOW_MIN)
+    max_age_cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
     hits = []
     for a in articles:
+        if a["id"] in seen:
+            continue  # 已推过，跳过
         combined = f"{a['title']} {a['summary']}"
         commodities = match_commodity(combined)
         if not commodities:
+            seen.add(a["id"])
             continue
-        # 时间窗口过滤：有发布时间的必须在窗口内；没时间的保守放行
-        if a["pub"] and a["pub"] < cutoff:
+        # 兜底：有发布时间且太旧（超过 MAX_AGE_HOURS）的不推
+        if a["pub"] and a["pub"] < max_age_cutoff:
+            seen.add(a["id"])
             continue
         a["commodities"] = commodities
         a["priority"] = is_priority(combined)
         hits.append(a)
+        seen.add(a["id"])
 
     # 去重（同标题）
     seen_titles = set()
@@ -259,8 +291,15 @@ def main():
             seen_titles.add(k)
             unique.append(a)
 
+    # 首次运行：只记录，不刷屏
+    if first_run:
+        print(f"首次运行：记录 {len(unique)} 条命中但不推送（避免刷屏）")
+        save_seen(seen)
+        return
+
     unique = unique[:MAX_PUSH_PER_RUN]
-    print(f"命中最近 {WINDOW_MIN} 分钟内的新闻：{len(unique)} 条")
+    print(f"本轮新命中：{len(unique)} 条")
+    save_seen(seen)
 
     if not unique:
         print("无新命中，退出")
@@ -269,7 +308,7 @@ def main():
     if DIGEST_MODE:
         # 汇总成一条 HTML 消息
         lines = [
-            f"<p>📊 <b>最近 {WINDOW_MIN} 分钟商品期货要闻 ({len(unique)} 条)</b></p><hr/>"
+            f"<p>📊 <b>商品期货新命中 {len(unique)} 条</b></p><hr/>"
         ]
         for a in unique:
             tag = " ".join(a["commodities"])
