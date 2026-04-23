@@ -17,7 +17,7 @@ import concurrent.futures
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-socket.setdefaulttimeout(10)
+socket.setdefaulttimeout(6)
 
 # ── 环境变量 ──────────────────────────────────────────────
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "").strip()
@@ -209,8 +209,17 @@ def fetch_feed(nu):
 def fetch_all():
     articles = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-        for result in ex.map(fetch_feed, RSS_FEEDS, timeout=60):
-            articles.extend(result)
+        futures = {ex.submit(fetch_feed, nu): nu for nu in RSS_FEEDS}
+        done, not_done = concurrent.futures.wait(futures, timeout=45)
+        for f in done:
+            try:
+                articles.extend(f.result(timeout=1))
+            except Exception:
+                pass
+        for f in not_done:
+            f.cancel()
+        if not_done:
+            print(f"[超时] {len(not_done)} 个 RSS 源未返回")
     return articles
 
 # ── 推送 ──────────────────────────────────────────────────
