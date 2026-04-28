@@ -1,2 +1,7 @@
 feedparser
 requests
+yfinance
+anthropic
+pandas
+numpy
+pytz
