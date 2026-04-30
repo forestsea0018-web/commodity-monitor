@@ -1,0 +1,157 @@
+name: MSTR-BMNR Arbitrage AI Agent
+
+on:
+  # ── 定时运行：美股交易时段内每 5 分钟（UTC 13:30-20:00 = 美东 9:30-16:00）──
+  schedule:
+    - cron: "*/5 13-19 * * 1-5"    # 周一~五 13:30-19:59 UTC
+    - cron: "0 20 * * 1-5"         # 每天 20:00 UTC 收盘收尾
+
+  # ── TradingView Webhook 触发（repository_dispatch）────────────────────────
+  # TradingView Alert Webhook URL:
+  #   https://api.github.com/repos/forestsea0018-web/commodity-monitor/dispatches
+  # Headers:
+  #   Authorization: token {GITHUB_PAT}   (需要 repo 权限的 Personal Access Token)
+  #   Content-Type: application/json
+  #   Accept: application/vnd.github.v3+json
+  # Body:
+  #   {
+  #     "event_type": "tradingview-signal",
+  #     "client_payload": {
+  #       "symbol": "MSTR",
+  #       "action": "BUY",
+  #       "price": 500.00,
+  #       "strategy": "arbitrage",
+  #       "timeframe": "1H",
+  #       "indicator": "spread_zscore",
+  #       "value": 2.15
+  #     }
+  #   }
+  repository_dispatch:
+    types: [tradingview-signal]
+
+  # ── 手动触发（测试用）────────────────────────────────────────────────────
+  workflow_dispatch:
+    inputs:
+      force_analysis:
+        description: "强制触发 AI 分析（忽略 Z-Score 阈值）"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      test_tv_signal:
+        description: "测试用 TradingView 信号 JSON（留空则跳过）"
+        required: false
+        default: ""
+
+concurrency:
+  group: arbitrage-agent
+  cancel-in-progress: false  # 不取消正在运行的交易，防止重复下单
+
+jobs:
+  analyze-and-trade:
+    name: 套利分析 & AI 决策
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet \
+            yfinance \
+            anthropic \
+            pandas \
+            numpy \
+            pytz \
+            requests
+
+      # ── 恢复持仓状态缓存（防止重复入场）──────────────────────────────────
+      - name: Restore position state
+        uses: actions/cache@v4
+        with:
+          path: position_state.json
+          key: position-state-v1
+          restore-keys: position-state-
+
+      # ── 解析 TradingView Webhook 载荷 ─────────────────────────────────────
+      - name: Parse TradingView payload
+        id: parse_tv
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PAYLOAD='${{ toJson(github.event.client_payload) }}'
+            echo "tv_payload=${PAYLOAD}" >> $GITHUB_OUTPUT
+            echo "[TV Signal] $PAYLOAD"
+          elif [ -n "${{ github.event.inputs.test_tv_signal }}" ]; then
+            echo "tv_payload=${{ github.event.inputs.test_tv_signal }}" >> $GITHUB_OUTPUT
+          else
+            echo "tv_payload=" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 运行套利 Agent ────────────────────────────────────────────────────
+      - name: Run arbitrage agent
+        timeout-minutes: 6
+        env:
+          PUSHPLUS_TOKEN:    ${{ secrets.PUSHPLUS_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ALPACA_API_KEY:    ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+
+          # 交易配置
+          AUTO_TRADE:        ${{ vars.AUTO_TRADE || '0' }}
+          PAPER_TRADING:     ${{ vars.PAPER_TRADING || '1' }}
+          SYMBOL_A:          ${{ vars.SYMBOL_A || 'MSTR' }}
+          SYMBOL_B:          ${{ vars.SYMBOL_B || 'BMNR' }}
+
+          # 策略参数
+          ENTRY_ZSCORE:      ${{ vars.ENTRY_ZSCORE || '2.0' }}
+          EXIT_ZSCORE:       ${{ vars.EXIT_ZSCORE || '0.5' }}
+          LOOKBACK_DAYS:     ${{ vars.LOOKBACK_DAYS || '30' }}
+          POSITION_PCT:      ${{ vars.POSITION_PCT || '0.05' }}
+          STOP_LOSS_PCT:     ${{ vars.STOP_LOSS_PCT || '0.03' }}
+          TAKE_PROFIT_PCT:   ${{ vars.TAKE_PROFIT_PCT || '0.06' }}
+
+          # TradingView 信号
+          TV_PAYLOAD:        ${{ steps.parse_tv.outputs.tv_payload }}
+          FORCE_ANALYSIS:    ${{ github.event.inputs.force_analysis || 'false' }}
+
+        run: python arbitrage_agent.py
+
+      # ── 保存持仓状态 ──────────────────────────────────────────────────────
+      - name: Save position state
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: position_state.json
+          key: position-state-v1-${{ github.run_id }}
+
+      # ── 失败时发送告警 ────────────────────────────────────────────────────
+      - name: Alert on failure
+        if: failure()
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os, requests
+          token = os.environ.get("PUSHPLUS_TOKEN", "")
+          if not token:
+              exit(0)
+          requests.post(
+              "http://www.pushplus.plus/send",
+              json={
+                  "token": token,
+                  "title": "⚠️ 套利 Agent 执行失败",
+                  "content": f"<p>GitHub Actions Job 失败，请检查日志。</p>"
+                             f"<p>Run ID: {os.environ.get('GITHUB_RUN_ID','?')}</p>",
+                  "template": "html",
+              },
+              timeout=10,
+          )
+          EOF
