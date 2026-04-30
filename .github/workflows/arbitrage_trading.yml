@@ -120,6 +120,7 @@ jobs:
 
           # TradingView 信号
           TV_PAYLOAD:        ${{ steps.parse_tv.outputs.tv_payload }}
+          FORCE_ANALYSIS:    ${{ github.event.inputs.force_analysis || 'false' }}
 
         run: python arbitrage_agent.py
 

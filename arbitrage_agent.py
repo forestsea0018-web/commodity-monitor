@@ -26,8 +26,6 @@ TradingView Webhook 接入：
 import os
 import sys
 import json
-import math
-import time
 import requests
 import numpy as np
 from datetime import datetime, timezone, timedelta
@@ -42,6 +40,7 @@ ALPACA_SECRET_KEY  = os.environ.get("ALPACA_SECRET_KEY", "").strip()
 TV_PAYLOAD = os.environ.get("TV_PAYLOAD", "").strip()
 
 # 交易配置
+FORCE_ANALYSIS   = os.environ.get("FORCE_ANALYSIS", "false") == "true"
 AUTO_TRADE       = os.environ.get("AUTO_TRADE", "0") == "1"
 PAPER_TRADING    = os.environ.get("PAPER_TRADING", "1") == "1"
 SYMBOL_A         = os.environ.get("SYMBOL_A", "MSTR")
@@ -389,7 +388,8 @@ def get_account() -> dict:
 def get_positions() -> list:
     try:
         r = requests.get(f"{ALPACA_BASE}/v2/positions", headers=alpaca_headers(), timeout=10)
-        return r.json() if isinstance(r.json(), list) else []
+        data = r.json()
+        return data if isinstance(data, list) else []
     except Exception:
         return []
 
@@ -649,9 +649,9 @@ def main():
 
     # ── 4. 快速判断：是否需要 AI 分析 ─────────────────────────────────────────
     needs_analysis = (
-        tv_signal is not None                           # TradingView 有信号
+        FORCE_ANALYSIS                                  # 手动强制触发
+        or tv_signal is not None                        # TradingView 有信号
         or abs(sp["zscore_30d"]) >= ENTRY_ZSCORE * 0.8 # Z-Score 接近入场阈值
-        or abs(sp["zscore_30d"]) <= EXIT_ZSCORE         # 接近平仓阈值
     )
 
     if not needs_analysis:
