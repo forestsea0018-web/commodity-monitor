@@ -33,6 +33,9 @@ from datetime import datetime, timezone, timedelta
 # ── 环境变量 ─────────────────────────────────────────────────────────────────
 PUSHPLUS_TOKEN     = os.environ.get("PUSHPLUS_TOKEN", "").strip()
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+DEEPSEEK_API_KEY   = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+# "anthropic" 或 "deepseek"，未设置时根据哪个 key 存在自动选择
+AI_PROVIDER        = os.environ.get("AI_PROVIDER", "").strip().lower()
 ALPACA_API_KEY     = os.environ.get("ALPACA_API_KEY", "").strip()
 ALPACA_SECRET_KEY  = os.environ.get("ALPACA_SECRET_KEY", "").strip()
 
@@ -368,6 +371,113 @@ def analyze_with_claude(market_data: dict, tv_signal: dict | None = None) -> dic
         return {"decision": "HOLD", "confidence": 0, "reasoning": f"Claude 调用失败: {e}", "risk_level": "HIGH"}
 
 
+def analyze_with_deepseek(market_data: dict, tv_signal: dict | None = None) -> dict:
+    """调用 DeepSeek API（OpenAI 兼容格式）进行套利分析"""
+    sp = market_data["spread"]
+    md = market_data
+    btc = md.get("btc", {})
+
+    tv_section = ""
+    if tv_signal:
+        tv_section = f"\n### TradingView 信号\n```json\n{json.dumps(tv_signal, ensure_ascii=False, indent=2)}\n```"
+
+    user_prompt = f"""## 当前市场快照 — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+
+| 指标 | {SYMBOL_A} | {SYMBOL_B} |
+|------|-----------|-----------|
+| 价格 | ${md['mstr']['price']:.2f} | ${md['bmnr']['price']:.2f} |
+| 24h% | {md['mstr']['change_24h']:+.2f}% | {md['bmnr']['change_24h']:+.2f}% |
+| RSI | {md['mstr']['rsi']:.1f} | {md['bmnr']['rsi']:.1f} |
+| MACD Hist | {md['mstr']['macd_hist']:.4f} | {md['bmnr']['macd_hist']:.4f} |
+| Bollinger %B | {md['mstr']['bb_pct']:.3f} | {md['bmnr']['bb_pct']:.3f} |
+| 成交量比率 | {md['mstr']['volume_ratio']:.2f}x | {md['bmnr']['volume_ratio']:.2f}x |
+
+### 套利价差
+- Z-Score (30日): {sp['zscore_30d']:+.3f}
+- Z-Score (20日): {sp['zscore_20d']:+.3f}
+- Z-Score (10日): {sp['zscore_10d']:+.3f}
+- 趋势: {sp['trend']}
+
+### BTC 背景
+- 价格: ${btc.get('price', 0):.0f} | 24h: {btc.get('change_24h', 0):+.2f}%
+{tv_section}
+
+请给出交易决策，严格 JSON 格式：
+{{
+  "decision": "PAIRS_LONG_A_SHORT_B" | "PAIRS_LONG_B_SHORT_A" | "CLOSE_POSITION" | "HOLD",
+  "confidence": 整数0-100,
+  "action_mstr": "BUY"|"SELL"|"HOLD",
+  "action_bmnr": "BUY"|"SELL"|"HOLD",
+  "position_size_pct": 0.01-0.10,
+  "stop_loss_pct": 止损比例,
+  "take_profit_pct": 止盈比例,
+  "reasoning": "详细中文分析",
+  "risk_level": "LOW"|"MEDIUM"|"HIGH",
+  "market_regime": "TRENDING"|"MEAN_REVERTING"|"VOLATILE"|"UNCLEAR",
+  "key_factors": ["因素1","因素2","因素3"],
+  "tv_signal_consistent": true|false|null
+}}"""
+
+    payload = {
+        "model": "deepseek-reasoner",   # 带推理链；如想更快可用 "deepseek-chat"
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": user_prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 2048,
+        "stream": False,
+    }
+
+    try:
+        r = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=120,
+        )
+        r.raise_for_status()
+        text = r.json()["choices"][0]["message"]["content"].strip()
+
+        # 提取 JSON
+        if "```json" in text:
+            json_str = text.split("```json")[1].split("```")[0].strip()
+        elif text.startswith("{"):
+            json_str = text
+        else:
+            start, end = text.find("{"), text.rfind("}") + 1
+            json_str = text[start:end] if start >= 0 and end > start else "{}"
+
+        return json.loads(json_str)
+
+    except Exception as e:
+        print(f"ERROR calling DeepSeek API: {e}")
+        return {"decision": "HOLD", "confidence": 0, "reasoning": f"DeepSeek 调用失败: {e}", "risk_level": "HIGH"}
+
+
+def _pick_ai_provider() -> str:
+    """自动选择 AI 提供商：优先使用 AI_PROVIDER 环境变量，其次看哪个 key 存在"""
+    if AI_PROVIDER in ("anthropic", "deepseek"):
+        return AI_PROVIDER
+    if DEEPSEEK_API_KEY:
+        return "deepseek"
+    if ANTHROPIC_API_KEY:
+        return "anthropic"
+    return "anthropic"  # 默认，后续会因 key 缺失报错
+
+
+def analyze(market_data: dict, tv_signal: dict | None = None) -> dict:
+    """统一入口：根据配置调用 Claude 或 DeepSeek"""
+    provider = _pick_ai_provider()
+    print(f"[AI] 使用提供商: {provider.upper()}")
+    if provider == "deepseek":
+        return analyze_with_deepseek(market_data, tv_signal)
+    return analyze_with_claude(market_data, tv_signal)
+
+
 # ── Alpaca 交易执行 ───────────────────────────────────────────────────────────
 def alpaca_headers() -> dict:
     return {
@@ -659,13 +769,17 @@ def main():
         _send_daily_summary(market_data)
         return
 
-    # ── 5. Claude AI 分析 ─────────────────────────────────────────────────────
-    if not ANTHROPIC_API_KEY:
+    # ── 5. AI 分析（Claude 或 DeepSeek）─────────────────────────────────────
+    provider = _pick_ai_provider()
+    if provider == "deepseek" and not DEEPSEEK_API_KEY:
+        print("ERROR: AI_PROVIDER=deepseek 但 DEEPSEEK_API_KEY 未配置")
+        sys.exit(1)
+    if provider == "anthropic" and not ANTHROPIC_API_KEY:
         print("ERROR: ANTHROPIC_API_KEY 未配置")
         sys.exit(1)
 
-    print("[AI] 调用 Claude claude-opus-4-7 分析中...")
-    decision = analyze_with_claude(market_data, tv_signal)
+    print(f"[AI] 调用 {provider.upper()} 分析中...")
+    decision = analyze(market_data, tv_signal)
     print(f"[AI] 决策: {decision.get('decision','?')} | 置信度: {decision.get('confidence',0)}%")
     print(f"[AI] 分析: {decision.get('reasoning','')[:100]}...")
 

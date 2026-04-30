@@ -101,6 +101,8 @@ jobs:
         env:
           PUSHPLUS_TOKEN:    ${{ secrets.PUSHPLUS_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_PROVIDER:       ${{ vars.AI_PROVIDER || '' }}
           ALPACA_API_KEY:    ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
 
