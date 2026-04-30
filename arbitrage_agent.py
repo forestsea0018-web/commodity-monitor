@@ -738,9 +738,18 @@ def main():
             print(f"[TV信号] 解析失败: {TV_PAYLOAD}")
 
     # ── 2. 检查市场是否开盘 ───────────────────────────────────────────────────
-    if not is_market_open() and not tv_signal:
-        print("[市场] 当前不在交易时段，跳过（TradingView 信号例外）")
+    market_open = is_market_open()
+    if not market_open and not tv_signal and not FORCE_ANALYSIS:
+        print("[市场] 当前不在交易时段，跳过（TradingView 信号/强制分析例外）")
         return
+
+    if FORCE_ANALYSIS and not market_open:
+        print("[市场] 强制分析模式 — 市场已收盘，继续执行（不实际下单）")
+        push_wechat(
+            f"🔍 {SYMBOL_A}/{SYMBOL_B} 系统自检 — 市场已收盘",
+            f"<p>手动触发成功，当前市场<b>已收盘</b>，将抓取最新数据进行分析，<b>不会实际下单</b>。</p>"
+            f"<p>触发时间: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>",
+        )
 
     # ── 3. 抓取行情数据 ───────────────────────────────────────────────────────
     print("[数据] 抓取行情数据...")
