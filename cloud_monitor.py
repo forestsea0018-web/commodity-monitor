@@ -21,11 +21,10 @@ socket.setdefaulttimeout(6)
 
 # ── 环境变量 ──────────────────────────────────────────────
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "").strip()
-# 最大推送条数（防刷屏 & 控制 PushPlus 日额度）
+# 群组推送：在 pushplus.plus 建群后填入群 topic（留空则只推给自己）
+PUSHPLUS_TOPIC = os.environ.get("PUSHPLUS_TOPIC", "").strip()
 MAX_PUSH_PER_RUN = int(os.environ.get("MAX_PUSH_PER_RUN", "30"))
-# 是否合并成一条汇总消息（推荐 True，节省 PushPlus 额度）
 DIGEST_MODE = os.environ.get("DIGEST_MODE", "1") == "1"
-# 兜底时间窗（小时）：即使是没见过的文章，超过这个时间也不推（避免首次跑刷屏）
 MAX_AGE_HOURS = int(os.environ.get("MAX_AGE_HOURS", "24"))
 
 SEEN_FILE = Path("seen_articles.json")
@@ -120,6 +119,18 @@ PRIORITY_KEYWORDS = [
     "上调", "下调", "预测", "报告",
 ]
 
+# 命中则跳过（财报/股东会噪音）
+EXCLUDE_KEYWORDS = [
+    "earnings", "quarterly results", "q1 result", "q2 result", "q3 result",
+    "q4 result", "first quarter", "second quarter", "third quarter",
+    "fourth quarter", "half-year", "interim result", "annual result",
+    "annual report", "trading update", "agm", "annual general meeting",
+    "investor day", "capital markets day", "dividend", "share buyback",
+    "stock split", "rights issue", "ipo", "secondary offering",
+    "财报", "年报", "季报", "半年报", "中报", "业绩公告", "业绩报告",
+    "营业收入", "净利润", "扣非", "派息", "分红", "股东大会", "股票回购",
+]
+
 RSS_FEEDS = [
     # 金属/矿业
     ("Kitco Metals",            "https://www.kitco.com/rss/rss.xml"),
@@ -176,7 +187,27 @@ RSS_FEEDS = [
     ("WTO News",                "https://www.wto.org/english/news_e/news_e.xml"),
     ("EU Trade",                "https://policy.trade.ec.europa.eu/news/rss_en"),
     ("China MOFCOM",            "http://english.mofcom.gov.cn/rss/news.xml"),
-    # 公司
+    # USDA 玉米专属高频
+    ("USDA WASDE",              "https://www.usda.gov/oce/commodity/wasde/rss/wasde.xml"),
+    ("USDA NASS 作物进度",       "https://www.nass.usda.gov/rss/cropprogress.xml"),
+    ("USDA ERS",                "https://www.ers.usda.gov/rss/feed.xml"),
+    ("AgWeb News",              "https://www.agweb.com/rss.xml"),
+    ("Farm Journal",            "https://www.farmjournal.com/rss.xml"),
+    # Farm Journal YouTube（填入真实 channel_id 后生效）
+    ("Farm Journal YouTube",    "https://www.youtube.com/feeds/videos.xml?channel_id=UCxxxxxxxxxxxxxxxxxxxxxx"),
+    # 钢联 Mysteel 各板块
+    ("Mysteel 有色",             "https://list.mysteel.com/rss/c-1024.xml"),
+    ("Mysteel 铜",               "https://list.mysteel.com/rss/c-1024-1045.xml"),
+    ("Mysteel 铝",               "https://list.mysteel.com/rss/c-1024-1046.xml"),
+    ("Mysteel 农产品",           "https://list.mysteel.com/rss/c-1165.xml"),
+    ("Mysteel 玉米",             "https://list.mysteel.com/rss/c-1165-1166.xml"),
+    ("Mysteel 棉花",             "https://list.mysteel.com/rss/c-1165-1170.xml"),
+    ("Mysteel 橡胶",             "https://list.mysteel.com/rss/c-1024-1055.xml"),
+    # 生意社各板块
+    ("生意社-有色",              "https://www.100ppi.com/rss/news-metal.xml"),
+    ("生意社-农副",              "https://www.100ppi.com/rss/news-agri.xml"),
+    ("生意社-橡塑",              "https://www.100ppi.com/rss/news-rubber.xml"),
+    # 公司（保留但财报已被 EXCLUDE 过滤）
     ("Freeport-McMoRan",        "https://investors.fcx.com/rss/news-releases.xml"),
     ("Glencore",                "https://www.glencore.com/rss/news"),
     ("Anglo American",          "https://www.angloamerican.com/rss/news"),
@@ -204,6 +235,8 @@ def _kw_match(text_lower, kw):
 
 def match_commodity(text):
     t = text.lower()
+    if any(_kw_match(t, kw) for kw in EXCLUDE_KEYWORDS):
+        return []
     return [name for name, kws in COMMODITIES.items()
             if any(_kw_match(t, kw) for kw in kws)]
 
@@ -267,19 +300,23 @@ def fetch_all():
 
 # ── 推送 ──────────────────────────────────────────────────
 def push_wechat(title, content_html):
-    """PushPlus 发微信。content 支持 HTML。"""
+    """PushPlus 发微信，支持群组推送。"""
     if not PUSHPLUS_TOKEN:
         print("[错误] 未设置 PUSHPLUS_TOKEN 环境变量")
         return False
     try:
+        payload = {
+            "token":    PUSHPLUS_TOKEN,
+            "title":    title[:80],
+            "content":  content_html,
+            "template": "html",
+        }
+        # 群组推送：有 topic 时同时推给所有群成员
+        if PUSHPLUS_TOPIC:
+            payload["topic"] = PUSHPLUS_TOPIC
         r = requests.post(
             "http://www.pushplus.plus/send",
-            json={
-                "token":    PUSHPLUS_TOKEN,
-                "title":    title[:80],
-                "content":  content_html,
-                "template": "html",
-            },
+            json=payload,
             timeout=15,
         )
         ok = r.status_code == 200 and r.json().get("code") == 200
