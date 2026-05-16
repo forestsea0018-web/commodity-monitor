@@ -443,11 +443,13 @@ def main():
             zh_title   = translate_to_zh(a["title"])
             zh_summary = translate_to_zh(a["summary"] or a["title"])
             title = f"{prio}{tag}｜{zh_title[:40]}"
+            link = a["link"]
+            source = a["source"]
             content = (
                 f'<p><b>{zh_title}</b></p>'
                 f'<p>{zh_summary}</p>'
-                f'<p><a href="{a[\"link\"]}">查看原文</a></p>'
-                f'<p><small>来源: {a["source"]}</small></p>'
+                f'<p><a href="{link}">查看原文</a></p>'
+                f'<p><small>来源: {source}</small></p>'
             )
             push_wechat(title, content)
             time.sleep(0.5)
