@@ -219,7 +219,35 @@ RSS_FEEDS = [
 
 # ── 匹配 ──────────────────────────────────────────────────
 import re
+import urllib.parse
+
 _CACHE = {}
+_TRANSLATE_CACHE = {}
+
+def translate_to_zh(text: str) -> str:
+    """Google 免费翻译接口，失败返回原文"""
+    if not text or not text.strip():
+        return text
+    zh_chars = sum(1 for c in text if "一" <= c <= "鿿")
+    if zh_chars / max(len(text), 1) > 0.3:
+        return text
+    text_cut = text[:300]
+    if text_cut in _TRANSLATE_CACHE:
+        return _TRANSLATE_CACHE[text_cut]
+    try:
+        url = (
+            "https://translate.googleapis.com/translate_a/single"
+            "?client=gtx&sl=auto&tl=zh-CN&dt=t&q="
+            + urllib.parse.quote(text_cut)
+        )
+        r = requests.get(url, timeout=5,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        data = r.json()
+        result = "".join(seg[0] for seg in data[0] if seg[0])
+        _TRANSLATE_CACHE[text_cut] = result
+        return result
+    except Exception:
+        return text
 
 def _kw_match(text_lower, kw):
     kwl = kw.lower()
@@ -395,17 +423,16 @@ def main():
         return
 
     if DIGEST_MODE:
-        # 汇总成一条 HTML 消息
-        lines = [
-            f"<p>📊 <b>商品期货新命中 {len(unique)} 条</b></p><hr/>"
-        ]
+        lines = [f"<p>📊 <b>商品期货新命中 {len(unique)} 条</b></p><hr/>"]
         for a in unique:
             tag = " ".join(a["commodities"])
             prio = "⚡ " if a["priority"] else ""
+            zh_title   = translate_to_zh(a["title"])
+            zh_summary = translate_to_zh(a["summary"][:200] or a["title"])
             lines.append(
                 f'<p>{prio}<b>{tag}</b><br/>'
-                f'<a href="{a["link"]}">{a["title"]}</a><br/>'
-                f'<small>[{a["source"]}] {a["summary"][:150]}</small></p>'
+                f'<a href="{a["link"]}">{zh_title}</a><br/>'
+                f'<small>[{a["source"]}] {zh_summary}</small></p>'
             )
         title = f"🔔 商品期货 {len(unique)} 条 ({datetime.now().strftime('%H:%M')})"
         push_wechat(title, "".join(lines))
@@ -413,11 +440,13 @@ def main():
         for a in unique:
             tag = " ".join(a["commodities"])
             prio = "⚡ " if a["priority"] else ""
-            title = f"{prio}{tag}｜{a['title'][:40]}"
+            zh_title   = translate_to_zh(a["title"])
+            zh_summary = translate_to_zh(a["summary"] or a["title"])
+            title = f"{prio}{tag}｜{zh_title[:40]}"
             content = (
-                f'<p><b>{a["title"]}</b></p>'
-                f'<p>{a["summary"]}</p>'
-                f'<p><a href="{a["link"]}">查看原文</a></p>'
+                f'<p><b>{zh_title}</b></p>'
+                f'<p>{zh_summary}</p>'
+                f'<p><a href="{a[\"link\"]}">查看原文</a></p>'
                 f'<p><small>来源: {a["source"]}</small></p>'
             )
             push_wechat(title, content)
