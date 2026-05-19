@@ -81,6 +81,16 @@ COMMODITIES = {
         "ethanol", "玉米淀粉", "feed corn", "玉米饲料",
         "adm", "archer daniels midland", "bunge", "cargill", "cofco",
         "中粮", "louis dreyfus", "syngenta corn", "bayer corn",
+        # EU/JRC 作物监测（MARS Bulletin 月报）
+        "MARS bulletin", "JRC MARS", "eu crop forecast", "european crop forecast",
+        "eu maize", "european maize", "eu corn", "crop monitoring europe",
+        # 美国玉米深度关键词
+        "crop tour", "planting pace", "crop condition", "trendline yield",
+        "corn rootworm", "derecho", "stonex grain", "allendale",
+        "us grains council", "growth energy", "farmdoc",
+        "grain stocks", "corn stocks", "corn acreage", "prospective plantings",
+        "crop progress", "iowa corn", "illinois corn", "nebraska corn",
+        "e15", "ethanol blend", "rfs mandate", "renewable fuel standard",
     ],
     "🌳 橡胶": [
         "rubber", "橡胶", "natural rubber", "tsr", "rss sheet",
@@ -117,6 +127,8 @@ PRIORITY_KEYWORDS = [
     "usda", "anrpc", "lme", "shfe", "cftc", "opec", "wasde", "ico",
     "mpob", "cofco", "report", "forecast", "outlook",
     "上调", "下调", "预测", "报告",
+    # EU JRC 报告
+    "MARS bulletin", "JRC MARS", "JRC crop", "EU crop",
 ]
 
 # 命中则跳过（财报/股东会噪音）
@@ -186,15 +198,28 @@ RSS_FEEDS = [
     ("White House",             "https://www.whitehouse.gov/briefing-room/feed/"),
     ("WTO News",                "https://www.wto.org/english/news_e/news_e.xml"),
     ("EU Trade",                "https://policy.trade.ec.europa.eu/news/rss_en"),
+    ("JRC Publications",        "https://publications.jrc.ec.europa.eu/repository/feed/rss_2.0/site"),
     ("China MOFCOM",            "http://english.mofcom.gov.cn/rss/news.xml"),
     # USDA 玉米专属高频
     ("USDA WASDE",              "https://www.usda.gov/oce/commodity/wasde/rss/wasde.xml"),
     ("USDA NASS 作物进度",       "https://www.nass.usda.gov/rss/cropprogress.xml"),
+    ("USDA NASS 官方报告",       "https://www.nass.usda.gov/Newsroom/Syndication/News/index.php"),
     ("USDA ERS",                "https://www.ers.usda.gov/rss/feed.xml"),
     ("AgWeb News",              "https://www.agweb.com/rss.xml"),
     ("Farm Journal",            "https://www.farmjournal.com/rss.xml"),
-    # Farm Journal YouTube（填入真实 channel_id 后生效）
-    ("Farm Journal YouTube",    "https://www.youtube.com/feeds/videos.xml?channel_id=UCxxxxxxxxxxxxxxxxxxxxxx"),
+    # Farm Journal YouTube（已确认 Channel ID）
+    ("Farm Journal YouTube",    "https://www.youtube.com/feeds/videos.xml?channel_id=UCqTizkFSbhBojVtIkjMEoZQ"),
+    # 美国玉米专属深度源
+    ("US Grains Council",       "https://grains.org/feed/"),
+    ("Growth Energy 乙醇",       "https://growthenergy.org/feed/"),
+    ("farmdoc Daily",           "https://farmdocdaily.illinois.edu/feed"),
+    ("Iowa State 作物生产",       "https://crops.extension.iastate.edu/rss/category/crop-production"),
+    ("AgWired",                 "https://agwired.com/feed/"),
+    ("EIA Today in Energy",     "https://www.eia.gov/rss/todayinenergy.xml"),
+    ("High Plains Journal",     "https://hpj.com/feed/"),
+    ("DTN Ag News",             "https://www.dtnpf.com/agriculture/web/ag/rss/news"),
+    ("Brownfield Ag News",      "https://brownfieldagnews.com/feed/"),
+    ("Pro Farmer",              "https://www.profarmer.com/rss.xml"),
     # 钢联 Mysteel 各板块
     ("Mysteel 有色",             "https://list.mysteel.com/rss/c-1024.xml"),
     ("Mysteel 铜",               "https://list.mysteel.com/rss/c-1024-1045.xml"),
