@@ -372,9 +372,13 @@ def push_wechat(title, content_html):
             json=payload,
             timeout=15,
         )
-        ok = r.status_code == 200 and r.json().get("code") == 200
-        if not ok:
-            print(f"[推送失败] {r.status_code} {r.text[:200]}")
+        resp_json = r.json()
+        ok = r.status_code == 200 and resp_json.get("code") == 200
+        if ok:
+            mode = f"群组 topic={PUSHPLUS_TOPIC}" if PUSHPLUS_TOPIC else "个人"
+            print(f"[推送成功] {mode} | 返回: {resp_json.get('msg', '')}")
+        else:
+            print(f"[推送失败] HTTP={r.status_code} code={resp_json.get('code')} msg={resp_json.get('msg','')}")
         return ok
     except Exception as e:
         print(f"[推送异常] {e}")
@@ -397,6 +401,12 @@ def main():
     if not PUSHPLUS_TOKEN:
         print("错误：请设置 PUSHPLUS_TOKEN 环境变量（GitHub Secrets）")
         sys.exit(1)
+
+    # 启动时打印推送模式，方便在 Actions 日志里确认
+    if PUSHPLUS_TOPIC:
+        print(f"[推送模式] 群组推送 topic={PUSHPLUS_TOPIC!r}（群组成员均可收到）")
+    else:
+        print("[推送模式] 个人推送（仅 token 持有人收到）— 如需群推请设置 PUSHPLUS_TOPIC Secret")
 
     seen = load_seen()
     first_run = len(seen) == 0
