@@ -30,6 +30,7 @@ jobs:
         timeout-minutes: 2
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHPLUS_TOPIC: ${{ secrets.PUSHPLUS_TOPIC }}
           MAX_AGE_HOURS: '24'
           MAX_PUSH_PER_RUN: '30'
           DIGEST_MODE: '1'
