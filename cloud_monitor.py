@@ -232,6 +232,20 @@ RSS_FEEDS = [
     ("生意社-有色",              "https://www.100ppi.com/rss/news-metal.xml"),
     ("生意社-农副",              "https://www.100ppi.com/rss/news-agri.xml"),
     ("生意社-橡塑",              "https://www.100ppi.com/rss/news-rubber.xml"),
+    # 权威财经媒体（Bloomberg 无公开 RSS，通过 Google News 聚合抓取）
+    ("Reuters Business",          "https://feeds.reuters.com/reuters/businessNews"),
+    ("Reuters Commodities",       "https://feeds.reuters.com/reuters/companyNews"),
+    ("FT Commodities",            "https://www.ft.com/commodities?format=rss"),
+    ("MarketWatch Markets",       "https://feeds.marketwatch.com/marketwatch/marketpulse/"),
+    # Google News RSS：聚合 Bloomberg / Reuters / FT 等权威来源
+    ("GNews Bloomberg 铝",        "https://news.google.com/rss/search?q=bloomberg+aluminum+market&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 铜",        "https://news.google.com/rss/search?q=bloomberg+copper+commodity&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 棕榈油",    "https://news.google.com/rss/search?q=bloomberg+palm+oil&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 橡胶",      "https://news.google.com/rss/search?q=bloomberg+rubber+commodity&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 棉花",      "https://news.google.com/rss/search?q=bloomberg+cotton+commodity&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 玉米",      "https://news.google.com/rss/search?q=bloomberg+corn+grain+market&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews Bloomberg 铂钯",      "https://news.google.com/rss/search?q=bloomberg+platinum+palladium&hl=en-US&gl=US&ceid=US:en"),
+    ("GNews 商品期货综合",         "https://news.google.com/rss/search?q=commodity+futures+bloomberg+reuters&hl=en-US&gl=US&ceid=US:en"),
     # 公司（保留但财报已被 EXCLUDE 过滤）
     ("Freeport-McMoRan",        "https://investors.fcx.com/rss/news-releases.xml"),
     ("Glencore",                "https://www.glencore.com/rss/news"),
